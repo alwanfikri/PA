@@ -34,16 +34,16 @@ const ALL_CACHES  = [SHELL_CACHE, CDN_CACHE];
 const SYNC_TAG    = 'lumina-sync';
 
 const SHELL_ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/db.js',
-  '/sync.js',
-  '/calendar.js',
-  '/diary.js',
-  '/drive.js',
-  '/manifest.json'
+  './',
+  './index.html',
+  './style.css',
+  './app.js',
+  './db.js',
+  './sync.js',
+  './calendar.js',
+  './diary.js',
+  './drive.js',
+  './manifest.json'
 ];
 
 const CDN_ASSETS = [
@@ -120,7 +120,7 @@ self.addEventListener('fetch', event => {
   }
 
   // ── CDN assets: cache-first (they're versioned/immutable) ─
-  if (CDN_ASSETS.some(a => request.url.startsWith(a.split('/').slice(0, 3).join('/')))) {
+  if (CDN_ASSETS.some(a => request.url.startsWith(a.split('./index.html').slice(0, 3).join('./index.html')))) {
     event.respondWith(cacheFirst(request, CDN_CACHE));
     return;
   }
@@ -407,7 +407,7 @@ self.addEventListener('notificationclick', event => {
     self.clients.matchAll({ type: 'window' }).then(clients => {
       const existing = clients.find(c => c.url.includes(self.location.origin));
       if (existing) return existing.focus();
-      return self.clients.openWindow('/');
+      return self.clients.openWindow('./index.html');
     })
   );
 });

@@ -46,8 +46,13 @@ import {
   markPhotoSynced, markPhotoError, getPendingPhotos, getPhotoBlob,
   saveConflict, getUnresolvedConflicts,
   getPendingTombstones, markTombstoneSynced,
-  getSyncStats, hashContent
+  getSyncStats, hashContent,
+  enqueueSync                          // re-exported for feature modules
 } from './db.js';
+
+// Re-export enqueueSync so diary.js, calendar.js, drive.js can import it
+// from sync.js without a circular dependency on db.js directly
+export { enqueueSync } from './db.js';
 
 // ── Constants ─────────────────────────────────────────────────
 const SYNC_TAG          = 'lumina-sync';
