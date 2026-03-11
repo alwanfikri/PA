@@ -1,8 +1,8 @@
 {
-  "name": "Lumina — Personal Productivity",
+  "name": "Lumina \u2014 Personal Productivity",
   "short_name": "Lumina",
-  "description": "Your personal productivity hub: agenda, diary, and photos — synced with Google.",
-  "start_url": "/",
+  "description": "Your personal productivity hub: agenda, diary, and photos \u2014 synced with Google.",
+  "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0d0f14",
@@ -58,21 +58,35 @@
     }
   ],
   "screenshots": [],
-  "categories": ["productivity", "lifestyle"],
+  "categories": [
+    "productivity",
+    "lifestyle"
+  ],
   "shortcuts": [
     {
       "name": "New Diary Entry",
       "short_name": "Diary",
       "description": "Write a new diary entry",
       "url": "/?tab=diary&action=new",
-      "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96" }]
+      "icons": [
+        {
+          "src": "icons/icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
     },
     {
       "name": "New Event",
       "short_name": "Agenda",
       "description": "Create a new agenda event",
       "url": "/?tab=agenda&action=new",
-      "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96" }]
+      "icons": [
+        {
+          "src": "icons/icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
     }
-  ]
+  ],
+  "scope": "./"
 }

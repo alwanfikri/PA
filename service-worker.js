@@ -28,8 +28,8 @@
       Snooze reschedules the notification in 10 min.
    ============================================================ */
 
-const SHELL_CACHE = 'lumina-shell-v2';
-const CDN_CACHE   = 'lumina-cdn-v2';
+const SHELL_CACHE = 'lumina-shell-v3';
+const CDN_CACHE   = 'lumina-cdn-v3';
 const ALL_CACHES  = [SHELL_CACHE, CDN_CACHE];
 const SYNC_TAG    = 'lumina-sync';
 
