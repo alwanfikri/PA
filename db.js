@@ -377,7 +377,26 @@ export async function markPhotoSynced(id, { driveUrl, driveId, thumbUrl = null }
   const db    = await openDB();
   const photo = await db.get('photoBlobs', id);
   if (!photo) return;
-  Object.assign(photo, { driveUrl, driveId, thumbUrl, syncStatus: 'synced', blob: null, thumbnail: null });
+
+  // Always derive a clean driveId from the URL if not provided directly
+  // Guards against URLs like /uc?export=view&id=ABC or /file/d/&ABC
+  let cleanDriveId = driveId;
+  if (!cleanDriveId && driveUrl) {
+    const m = driveUrl.match(/[?&]id=([^&/]+)/) || driveUrl.match(/\/d\/([^&/?]+)/);
+    if (m) cleanDriveId = m[1];
+  }
+
+  const cleanThumbUrl = thumbUrl
+    || (cleanDriveId ? `https://drive.google.com/thumbnail?id=${cleanDriveId}&sz=w400` : null);
+
+  Object.assign(photo, {
+    driveUrl,
+    driveId:   cleanDriveId,
+    thumbUrl:  cleanThumbUrl,
+    syncStatus: 'synced',
+    blob:       null,
+    thumbnail:  null
+  });
   await db.put('photoBlobs', photo);
   return photo;
 }
