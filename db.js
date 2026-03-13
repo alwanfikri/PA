@@ -360,6 +360,7 @@ export async function savePhotoBlob({ blob, thumbnail, name, mimeType, width, he
     sizeBytes:  blob.size,
     driveUrl:   null,
     driveId:    null,
+    thumbUrl:   null,
     syncStatus: 'pending',
     errorMsg:   null,
     createdAt:  new Date().toISOString()
@@ -372,11 +373,11 @@ export async function getPhotoBlob(id)           { return dbGet('photoBlobs', id
 export async function getPhotosByEntry(entryId)  { return dbGetAllByIndex('photoBlobs', 'entryId', entryId); }
 export async function getPendingPhotos()         { return dbGetAllByIndex('photoBlobs', 'syncStatus', 'pending'); }
 
-export async function markPhotoSynced(id, { driveUrl, driveId }) {
+export async function markPhotoSynced(id, { driveUrl, driveId, thumbUrl = null }) {
   const db    = await openDB();
   const photo = await db.get('photoBlobs', id);
   if (!photo) return;
-  Object.assign(photo, { driveUrl, driveId, syncStatus: 'synced', blob: null, thumbnail: null });
+  Object.assign(photo, { driveUrl, driveId, thumbUrl, syncStatus: 'synced', blob: null, thumbnail: null });
   await db.put('photoBlobs', photo);
   return photo;
 }

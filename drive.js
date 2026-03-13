@@ -319,7 +319,7 @@ async function handleGalleryUpload(file) {
 
     placeholder.className = 'gallery-item';
     placeholder.innerHTML = `
-      <img src="${result.thumbURL || result.objectURL}" alt="${escapeHtml(file.name)}" loading="lazy">
+      <img src="${result.thumbURL || result.objectURL}" alt="${escapeHtml(file.name)}" loading="lazy" onerror="this.src='${result.objectURL}'">
       <div class="gallery-item-overlay">
         <span class="gallery-sync-badge pending">↑ Pending</span>
       </div>
@@ -351,14 +351,40 @@ export async function renderGallery() {
     return;
   }
 
+  // ── Migrate existing records: derive thumbUrl from driveUrl ───
+  // Runs once for photos uploaded before thumbUrl was stored.
+  const needsMigration = photos.filter(p => p.syncStatus === 'synced' && p.driveUrl && !p.thumbUrl);
+  if (needsMigration.length > 0) {
+    const { dbPut } = await import('./db.js');
+    for (const p of needsMigration) {
+      const fileId = p.driveUrl.match(/id=([^&]+)/)?.[1];
+      if (fileId) {
+        p.thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+        await dbPut('photoBlobs', p);
+      }
+    }
+  }
+
   grid.innerHTML = '';
   for (const photo of photos) {
     const item = document.createElement('div');
     item.className = 'gallery-item';
 
-    let src = photo.driveUrl || null;
-    if (!src && (photo.thumbnail || photo.blob)) {
+    // Priority for display src:
+    // 1. thumbUrl (Google's thumbnail CDN — no CORS issues, fast)
+    // 2. Local blob/thumbnail (before upload completes)
+    // 3. driveUrl as last resort (may have CORS issues in some browsers)
+    let src = null;
+    if (photo.thumbUrl) {
+      src = photo.thumbUrl;
+    } else if (photo.thumbnail || photo.blob) {
       src = trackURL(blobToObjectURL(photo.thumbnail || photo.blob));
+    } else if (photo.driveUrl) {
+      // Convert uc?export=view to thumbnail URL to avoid CORS
+      const fileId = photo.driveUrl.match(/id=([^&]+)/)?.[1];
+      src = fileId
+        ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`
+        : photo.driveUrl;
     }
 
     if (!src) continue;
@@ -369,9 +395,19 @@ export async function renderGallery() {
         ? '<span class="gallery-sync-badge error">!</span>'
         : '<span class="gallery-sync-badge pending">↑</span>';
 
-    item.innerHTML = `
-      <img src="${src}" alt="${escapeHtml(photo.name)}" loading="lazy">
-      <div class="gallery-item-overlay">${badge}</div>`;
+    // Link to full Drive view on tap (only for synced photos)
+    const link = photo.syncStatus === 'synced' && photo.driveUrl
+      ? photo.driveUrl.replace('uc?export=view', 'file/d/').replace(/id=(.+)/, '$1/view')
+      : null;
+
+    item.innerHTML = link
+      ? `<a href="${link}" target="_blank" rel="noopener">
+           <img src="${src}" alt="${escapeHtml(photo.name)}" loading="lazy" onerror="this.closest('.gallery-item').style.display='none'">
+         </a>
+         <div class="gallery-item-overlay">${badge}</div>`
+      : `<img src="${src}" alt="${escapeHtml(photo.name)}" loading="lazy" onerror="this.closest('.gallery-item').style.display='none'">
+         <div class="gallery-item-overlay">${badge}</div>`;
+
     grid.appendChild(item);
   }
 }

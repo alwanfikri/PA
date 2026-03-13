@@ -443,7 +443,7 @@ async function _uploadPhoto(item) {
       type:   photo.mimeType
     });
 
-    await markPhotoSynced(photo.id, { driveUrl: res.url, driveId: res.id });
+    await markPhotoSynced(photo.id, { driveUrl: res.url, driveId: res.id, thumbUrl: res.thumbUrl || null });
     await removeSyncItem(item.id);
     console.log('[Sync] Photo uploaded:', photo.id, '→', res.url);
     return true;
