@@ -76,12 +76,17 @@ export async function initSync() {
   _setupConnectivityListeners();
   _setupSwMessageListener();
 
+  // Set correct status immediately on boot — don't wait for an online/offline event
+  _updateStatusUI(navigator.onLine ? 'online' : 'offline');
+
   if (navigator.onLine && _apiUrl) scheduleSync(3_000);
   console.log('[Sync] v2 initialized. API:', _apiUrl || '(not set)');
 }
 
 export function setApiUrl(url) {
   _apiUrl = url;
+  // Re-check status now that API URL is set
+  _updateStatusUI(navigator.onLine ? 'online' : 'offline');
 }
 
 // ══════════════════════════════════════════════════════════════

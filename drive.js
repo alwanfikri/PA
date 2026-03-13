@@ -27,7 +27,7 @@ import {
   savePhotoBlob, getPendingPhotos, markPhotoSynced, markPhotoError,
   blobToObjectURL, generateId
 } from './db.js';
-import { enqueueSync } from './sync.js';
+import { enqueueSync, scheduleSync } from './sync.js';
 
 // ── Compression targets ────────────────────────────────────────
 const MAX_DIMENSION   = 1600;   // px — max long edge
@@ -95,6 +95,10 @@ export async function processAndQueuePhoto(file, entryId = null) {
     priority:     3,
     localVersion: 0
   });
+
+  // Step 7b: Kick the sync engine — photos won't upload otherwise
+  // (diary.js and calendar.js do this too after enqueuing)
+  scheduleSync(2_000);
 
   // Step 8: Return ObjectURL for immediate display
   const objectURL = blobToObjectURL(compressedBlob);
