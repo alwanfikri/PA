@@ -40,7 +40,14 @@ async function boot() {
     if (!lastPull) {
       console.log('[App] First run — pulling data from server...');
       showToast('First sync — pulling your data…', 'info');
-      await pullFromServer();
+      const pullResult = await pullFromServer();
+      if (pullResult.photos > 0) {
+        // Gallery needs to re-render after module init
+        setTimeout(async () => {
+          const m = await import('./drive.js');
+          m.renderGallery?.();
+        }, 500);
+      }
     }
   }
 
@@ -183,12 +190,19 @@ function bindGlobalEvents() {
 
   // Listen for synced events to update badge
   window.addEventListener('lumina:synced', updateSyncBadge);
-  window.addEventListener('lumina:pulled', async () => {
+  window.addEventListener('lumina:pulled', async (e) => {
     updateSyncBadge();
+    const detail = e.detail || {};
     // Re-render active tab after pull
     const activeTab = document.querySelector('.tab-content.active')?.id;
-    if (activeTab === 'diary-tab')  { const m = await import('./diary.js');    m.renderDiaryList?.(); }
-    if (activeTab === 'agenda-tab') { const m = await import('./calendar.js'); m.renderCalendar?.(); }
+    if (activeTab === 'diary-tab')   { const m = await import('./diary.js');    m.renderDiaryList?.(); }
+    if (activeTab === 'agenda-tab')  { const m = await import('./calendar.js'); m.renderCalendar?.(); }
+    if (activeTab === 'photos-tab')  { const m = await import('./drive.js');    m.renderGallery?.(); }
+    // Always refresh gallery in background if photos were pulled
+    if (detail.photos > 0 && activeTab !== 'photos-tab') {
+      const m = await import('./drive.js');
+      m.renderGallery?.();
+    }
   });
   window.addEventListener('lumina:conflict', (e) => {
     updateSyncBadge();
@@ -280,10 +294,16 @@ function bindSettings() {
     if (!navigator.onLine) { showToast('You are offline.', 'error'); return; }
     showToast('Pulling latest data…', 'info');
     const result = await pullFromServer();
-    if (result.diary + result.agenda > 0) {
-      showToast(`Pulled ${result.diary} entries, ${result.agenda} events`, 'success');
+    const total = result.diary + result.agenda + result.photos;
+    if (total > 0) {
+      const parts = [];
+      if (result.diary)  parts.push(`${result.diary} entries`);
+      if (result.agenda) parts.push(`${result.agenda} events`);
+      if (result.photos) parts.push(`${result.photos} photos`);
+      showToast(`Pulled: ${parts.join(', ')}`, 'success');
       await import('./diary.js').then(m => m.renderDiaryList?.());
       await import('./calendar.js').then(m => m.renderCalendar?.());
+      await import('./drive.js').then(m => m.renderGallery?.());
     } else {
       showToast('Already up to date', 'info');
     }

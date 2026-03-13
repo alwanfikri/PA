@@ -59,7 +59,7 @@ const SYNC_TAG          = 'lumina-sync';
 const MAX_RETRIES       = 5;
 const BASE_BACKOFF_MS   = 1_000;
 const MAX_BACKOFF_MS    = 300_000; // 5 min
-const PHOTO_CONCURRENCY = 2;
+const PHOTO_CONCURRENCY = 1; // Apps Script can't handle concurrent large uploads
 const SYNC_COOLDOWN_MS  = 800;     // min gap between syncs
 
 let _apiUrl        = '';
@@ -494,7 +494,9 @@ export async function apiCall(action, params = {}) {
   if (!_apiUrl) throw new Error('API URL not configured. Open Settings to add it.');
 
   const controller = new AbortController();
-  const timeout    = setTimeout(() => controller.abort(), 25_000); // 25s timeout
+  // Photo uploads can take 30-60s on Apps Script — use longer timeout
+  const timeoutMs  = action === 'uploadPhoto' ? 90_000 : 25_000;
+  const timeout    = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(_apiUrl, {
