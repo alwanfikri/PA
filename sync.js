@@ -649,51 +649,45 @@ function showToast(message, type = 'info') {
 export async function pullFromServer() {
   if (!navigator.onLine) {
     showToast('You are offline — cannot pull data.', 'error');
-    return { diary: 0, agenda: 0 };
+    return { diary: 0, agenda: 0, photos: 0 };
   }
   if (!_apiUrl) {
     showToast('Set your API URL in Settings first.', 'error');
-    return { diary: 0, agenda: 0 };
+    return { diary: 0, agenda: 0, photos: 0 };
   }
 
   _updateStatusUI('syncing');
   console.log('[Sync] Pulling from server...');
 
-  let diaryPulled = 0, agendaPulled = 0;
+  let diaryPulled = 0, agendaPulled = 0, photosPulled = 0;
 
   try {
-    // ── Pull diary entries ───────────────────────────────
+    // ── Phase 1: Pull diary entries ──────────────────────
     const diaryRes = await apiCall('getDiaryEntries');
     const entries  = diaryRes.entries || [];
 
     for (const remote of entries) {
-      const existing = await dbGet('diary', _remoteIdToLocalKey('diary', remote.id));
       const byRemote = await _findLocalByRemoteId('diary', remote.id);
-
       if (byRemote) {
-        // Record exists — only overwrite if local is cleanly synced
         if (byRemote.syncStatus === 'synced') {
           await dbPut('diary', _remoteEntryToLocal(remote, byRemote.id));
           diaryPulled++;
         }
-        // If pending/conflict, leave it — push will handle it
       } else {
-        // New record — insert with a local ID
         await dbPut('diary', _remoteEntryToLocal(remote));
         diaryPulled++;
       }
     }
 
-    // ── Pull calendar events (next 6 months) ────────────
-    const now      = new Date();
-    const start    = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
-    const end      = new Date(now.getFullYear(), now.getMonth() + 6, 0).toISOString();
-    const calRes   = await apiCall('getCalendarEvents', { start, end });
-    const events   = calRes.events || [];
+    // ── Phase 2: Pull calendar events ───────────────────
+    const now   = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+    const end   = new Date(now.getFullYear(), now.getMonth() + 6, 0).toISOString();
+    const calRes  = await apiCall('getCalendarEvents', { start, end });
+    const events  = calRes.events || [];
 
     for (const remote of events) {
       const byRemote = await _findLocalByRemoteId('agenda', remote.id);
-
       if (byRemote) {
         if (byRemote.syncStatus === 'synced') {
           await dbPut('agenda', _remoteEventToLocal(remote, byRemote.id));
@@ -705,24 +699,76 @@ export async function pullFromServer() {
       }
     }
 
-    // ── Record last pull time ────────────────────────────
+    // ── Phase 3: Pull photos from Photos sheet ───────────
+    // Sheet-based: instant O(n) scan, no Drive API query needed.
+    // Each row = one photo's metadata (driveId, thumbUrl, name, etc.)
+    try {
+      const photoRes     = await apiCall('listPhotoMeta');
+      const remotePhotos = photoRes.photos || [];
+
+      // Build lookup of known driveIds for O(1) dedup check
+      const localPhotos   = await dbGetAll('photoBlobs');
+      const knownDriveIds = new Set(localPhotos.map(p => p.driveId).filter(Boolean));
+
+      for (const remote of remotePhotos) {
+        const driveId = remote.drive_id;
+        if (!driveId) continue;
+
+        if (knownDriveIds.has(driveId)) {
+          // Already have it — patch thumbUrl if missing
+          const existing = localPhotos.find(p => p.driveId === driveId);
+          if (existing && !existing.thumbUrl && remote.thumb_url) {
+            existing.thumbUrl = remote.thumb_url;
+            await dbPut('photoBlobs', existing);
+          }
+          continue;
+        }
+
+        // New photo — create metadata-only record (no blob download)
+        const thumbUrl = remote.thumb_url
+          || `https://drive.google.com/thumbnail?id=${driveId}&sz=w400`;
+
+        await dbPut('photoBlobs', {
+          id:         _dbUtils.generateId('P'),
+          entryId:    remote.entry_id  || null,
+          blob:       null,
+          thumbnail:  null,
+          name:       remote.name      || 'photo.jpg',
+          mimeType:   'image/jpeg',
+          width:      0,
+          height:     0,
+          sizeBytes:  0,
+          driveUrl:   remote.drive_url || `https://drive.google.com/uc?export=view&id=${driveId}`,
+          driveId:    driveId,
+          thumbUrl:   thumbUrl,
+          syncStatus: 'synced',
+          errorMsg:   null,
+          createdAt:  remote.created_at || new Date().toISOString()
+        });
+        photosPulled++;
+      }
+    } catch (photoErr) {
+      console.warn('[Sync] Photo pull failed (non-fatal):', photoErr.message);
+    }
+
+    // ── Done ─────────────────────────────────────────────
     await setSetting('lastPullAt', new Date().toISOString());
 
-    console.log(`[Sync] Pull complete: ${diaryPulled} diary, ${agendaPulled} agenda`);
-    _updateStatusUI('success', diaryPulled + agendaPulled);
+    const total = diaryPulled + agendaPulled + photosPulled;
+    console.log(`[Sync] Pull complete: ${diaryPulled} diary, ${agendaPulled} agenda, ${photosPulled} photos`);
+    _updateStatusUI('success', total);
 
-    // Notify UI to re-render
     window.dispatchEvent(new CustomEvent('lumina:pulled', {
-      detail: { diary: diaryPulled, agenda: agendaPulled }
+      detail: { diary: diaryPulled, agenda: agendaPulled, photos: photosPulled }
     }));
 
-    return { diary: diaryPulled, agenda: agendaPulled };
+    return { diary: diaryPulled, agenda: agendaPulled, photos: photosPulled };
 
   } catch (err) {
     console.error('[Sync] Pull failed:', err);
     _updateStatusUI('error');
     showToast('Sync pull failed: ' + err.message, 'error');
-    return { diary: 0, agenda: 0 };
+    return { diary: 0, agenda: 0, photos: 0 };
   }
 }
 

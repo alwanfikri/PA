@@ -322,7 +322,7 @@ function _renderCarouselSlide() {
 async function deletePhoto(photo) {
   try {
     if (photo.driveId) {
-      // Queue delete on server — sync engine will call deletePhoto action
+      // Queue Drive file delete + Photos sheet row delete
       await enqueueSync({
         entityType: 'photo',
         operation:  'delete',
@@ -334,7 +334,7 @@ async function deletePhoto(photo) {
       scheduleSync(1_000);
     }
 
-    // Remove from local DB immediately
+    // Remove from local DB immediately — no waiting for server
     await dbDelete('photoBlobs', photo.id);
 
     showToast('Photo deleted', 'info');
