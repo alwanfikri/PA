@@ -40,7 +40,7 @@
    ============================================================ */
 
 import {
-  dbGet, dbPut, getSetting,
+  dbGet, dbPut, dbGetAll, getSetting, setSetting,
   getSyncQueue, removeSyncItem, updateSyncItem,
   markDiarySynced, markAgendaSynced,
   markPhotoSynced, markPhotoError, getPendingPhotos, getPhotoBlob,
@@ -623,6 +623,176 @@ function blobToBase64(blob) {
 function showToast(message, type = 'info') {
   window.dispatchEvent(new CustomEvent('lumina:toast', { detail: { message, type } }));
 }
+
+
+// ══════════════════════════════════════════════════════════════
+//  PULL FROM SERVER  (initial sync for new devices)
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Pull all data from the server and write it into the local IndexedDB.
+ *
+ * MERGE STRATEGY (per record):
+ *   - Record doesn't exist locally → insert it as synced
+ *   - Record exists locally as 'synced' → overwrite with server version
+ *   - Record exists locally as 'pending' or 'conflict' → keep local
+ *     (user has unsynced edits — don't clobber them)
+ *
+ * Called automatically on first boot (lastPullAt === null) and
+ * exposed as manualPull() for the user to trigger manually.
+ */
+export async function pullFromServer() {
+  if (!navigator.onLine) {
+    showToast('You are offline — cannot pull data.', 'error');
+    return { diary: 0, agenda: 0 };
+  }
+  if (!_apiUrl) {
+    showToast('Set your API URL in Settings first.', 'error');
+    return { diary: 0, agenda: 0 };
+  }
+
+  _updateStatusUI('syncing');
+  console.log('[Sync] Pulling from server...');
+
+  let diaryPulled = 0, agendaPulled = 0;
+
+  try {
+    // ── Pull diary entries ───────────────────────────────
+    const diaryRes = await apiCall('getDiaryEntries');
+    const entries  = diaryRes.entries || [];
+
+    for (const remote of entries) {
+      const existing = await dbGet('diary', _remoteIdToLocalKey('diary', remote.id));
+      const byRemote = await _findLocalByRemoteId('diary', remote.id);
+
+      if (byRemote) {
+        // Record exists — only overwrite if local is cleanly synced
+        if (byRemote.syncStatus === 'synced') {
+          await dbPut('diary', _remoteEntryToLocal(remote, byRemote.id));
+          diaryPulled++;
+        }
+        // If pending/conflict, leave it — push will handle it
+      } else {
+        // New record — insert with a local ID
+        await dbPut('diary', _remoteEntryToLocal(remote));
+        diaryPulled++;
+      }
+    }
+
+    // ── Pull calendar events (next 6 months) ────────────
+    const now      = new Date();
+    const start    = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+    const end      = new Date(now.getFullYear(), now.getMonth() + 6, 0).toISOString();
+    const calRes   = await apiCall('getCalendarEvents', { start, end });
+    const events   = calRes.events || [];
+
+    for (const remote of events) {
+      const byRemote = await _findLocalByRemoteId('agenda', remote.id);
+
+      if (byRemote) {
+        if (byRemote.syncStatus === 'synced') {
+          await dbPut('agenda', _remoteEventToLocal(remote, byRemote.id));
+          agendaPulled++;
+        }
+      } else {
+        await dbPut('agenda', _remoteEventToLocal(remote));
+        agendaPulled++;
+      }
+    }
+
+    // ── Record last pull time ────────────────────────────
+    await setSetting('lastPullAt', new Date().toISOString());
+
+    console.log(`[Sync] Pull complete: ${diaryPulled} diary, ${agendaPulled} agenda`);
+    _updateStatusUI('success', diaryPulled + agendaPulled);
+
+    // Notify UI to re-render
+    window.dispatchEvent(new CustomEvent('lumina:pulled', {
+      detail: { diary: diaryPulled, agenda: agendaPulled }
+    }));
+
+    return { diary: diaryPulled, agenda: agendaPulled };
+
+  } catch (err) {
+    console.error('[Sync] Pull failed:', err);
+    _updateStatusUI('error');
+    showToast('Sync pull failed: ' + err.message, 'error');
+    return { diary: 0, agenda: 0 };
+  }
+}
+
+// ── Convert a server diary entry → local DB record ────────────
+function _remoteEntryToLocal(remote, existingLocalId = null) {
+  const { generateId } = _dbUtils;
+  return {
+    id:           existingLocalId || generateId('D'),
+    remoteId:     remote.id,
+    date:         remote.date         || '',
+    title:        remote.title        || '',
+    content_html: remote.content_html || '',
+    photo_ids:    [],
+    photo_urls:   remote.photo_urls   || [],
+    localVersion:  remote.version     || 1,
+    serverVersion: remote.version     || 1,
+    serverHash:    remote.hash        || '',
+    syncStatus:   'synced',
+    deleted:      false,
+    deletedAt:    null,
+    createdAt:    remote.created_at   || new Date().toISOString(),
+    updatedAt:    remote.updated_at   || new Date().toISOString()
+  };
+}
+
+// ── Convert a server calendar event → local DB record ─────────
+function _remoteEventToLocal(remote, existingLocalId = null) {
+  const { generateId } = _dbUtils;
+  return {
+    id:              existingLocalId || generateId('A'),
+    remoteId:        remote.id,
+    title:           remote.title           || '',
+    description:     remote.description     || '',
+    startTime:       remote.startTime       || '',
+    endTime:         remote.endTime         || '',
+    allDay:          remote.allDay          || false,
+    color:           remote.colorId         ? '#c8a97e' : '#c8a97e',
+    reminderMinutes: remote.reminderMinutes || 30,
+    localVersion:    remote.version         || 1,
+    serverVersion:   remote.version         || 1,
+    serverHash:      remote.hash            || '',
+    syncStatus:      'synced',
+    deleted:         false,
+    reminderFired:   false,
+    createdAt:       remote.created         || new Date().toISOString(),
+    updatedAt:       remote.updated         || new Date().toISOString()
+  };
+}
+
+// ── Find a local record by its remoteId ───────────────────────
+async function _findLocalByRemoteId(storeName, remoteId) {
+  if (!remoteId) return null;
+  try {
+    const db = await import('./db.js').then(m => m.openDB());
+    const results = await db.getAllFromIndex(storeName, 'remoteId', remoteId);
+    return results?.[0] || null;
+  } catch (_) {
+    // Fallback: scan all (slower but safe if index missing)
+    const all = await dbGetAll(storeName);
+    return all.find(r => r.remoteId === remoteId) || null;
+  }
+}
+
+// Lazy reference to db utils (avoids import-time circular issues)
+const _dbUtils = {
+  get generateId() {
+    return (prefix = '') => {
+      const ts   = Date.now().toString(36).toUpperCase();
+      const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+      return `${prefix}${ts}${rand}`;
+    };
+  }
+};
+
+function _remoteIdToLocalKey(store, remoteId) { return remoteId; }
 
 // ══════════════════════════════════════════════════════════════
 //  PUBLIC EXPORTS

@@ -6,7 +6,7 @@
    ============================================================ */
 
 import { openDB, getSetting, setSetting, getSyncStats, getUnresolvedConflicts } from './db.js';
-import { initSync, setApiUrl, manualSync, isOnline, processQueue, scheduleSync } from './sync.js';
+import { initSync, setApiUrl, manualSync, pullFromServer, isOnline, processQueue, scheduleSync } from './sync.js';
 import { initDiary, openDiaryEditor, closeDiaryEditor, saveDiaryEditorEntry } from './diary.js';
 import { initCalendar, openEventEditor, closeEventEditor, saveEventEditorEntry, setAgendaView } from './calendar.js';
 import { initPhotoGallery } from './drive.js';
@@ -32,6 +32,17 @@ async function boot() {
   // Initialize sync engine
   await initSync();
   if (apiUrl) setApiUrl(apiUrl);
+
+  // ── First-run pull: if this device has never synced, pull everything ──
+  // This is what makes a second device see existing data immediately.
+  if (apiUrl) {
+    const lastPull = await getSetting('lastPullAt', null);
+    if (!lastPull) {
+      console.log('[App] First run — pulling data from server...');
+      showToast('First sync — pulling your data…', 'info');
+      await pullFromServer();
+    }
+  }
 
   // Initialize feature modules
   await initDiary();
@@ -172,6 +183,13 @@ function bindGlobalEvents() {
 
   // Listen for synced events to update badge
   window.addEventListener('lumina:synced', updateSyncBadge);
+  window.addEventListener('lumina:pulled', async () => {
+    updateSyncBadge();
+    // Re-render active tab after pull
+    const activeTab = document.querySelector('.tab-content.active')?.id;
+    if (activeTab === 'diary-tab')  { const m = await import('./diary.js');    m.renderDiaryList?.(); }
+    if (activeTab === 'agenda-tab') { const m = await import('./calendar.js'); m.renderCalendar?.(); }
+  });
   window.addEventListener('lumina:conflict', (e) => {
     updateSyncBadge();
     const { name } = e.detail;
@@ -248,7 +266,26 @@ function bindSettings() {
     settingsPanel?.classList.remove('active');
     showToast('API URL saved!', 'success');
     if (url) {
+      // New URL saved — do a full pull then push any local changes
+      showToast('Pulling data from server…', 'info');
+      await pullFromServer();
+      await import('./diary.js').then(m => m.initDiary?.());
+      await import('./calendar.js').then(m => m.renderCalendar?.());
       await processQueue();
+    }
+  });
+
+  // Pull latest data from server
+  document.getElementById('pull-data-btn')?.addEventListener('click', async () => {
+    if (!navigator.onLine) { showToast('You are offline.', 'error'); return; }
+    showToast('Pulling latest data…', 'info');
+    const result = await pullFromServer();
+    if (result.diary + result.agenda > 0) {
+      showToast(`Pulled ${result.diary} entries, ${result.agenda} events`, 'success');
+      await import('./diary.js').then(m => m.renderDiaryList?.());
+      await import('./calendar.js').then(m => m.renderCalendar?.());
+    } else {
+      showToast('Already up to date', 'info');
     }
   });
 
@@ -268,6 +305,15 @@ async function updateSyncBadge() {
   if (!badge) return;
 
   const counts = await getSyncStats();
+
+  // Update last pull time in settings
+  const lastPullEl = document.getElementById('last-pull-detail');
+  if (lastPullEl) {
+    const lastPull = await getSetting('lastPullAt', null);
+    lastPullEl.textContent = lastPull
+      ? 'Last pulled: ' + new Date(lastPull).toLocaleString()
+      : 'Never pulled from server';
+  }
   const total = counts.diary + counts.agenda + counts.photos;
 
   const conflicts = counts.conflicts || 0;

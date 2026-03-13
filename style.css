@@ -906,6 +906,25 @@ select.input-field {
 }
 .btn-danger:hover { background: #c04444; }
 
+/* ── Settings sync button row ─────────────────────────────── */
+.settings-btn-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.settings-btn-row .btn-ghost {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 0.5rem 0.75rem;
+}
+.sync-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  min-height: 1rem;
+}
+
+
 .btn-icon {
   display: inline-flex;
   align-items: center;

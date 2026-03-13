@@ -314,11 +314,16 @@
       </div>
 
       <div class="settings-section">
-        <h4 class="settings-section-title">Sync Status</h4>
+        <h4 class="settings-section-title">Sync</h4>
         <div id="sync-details" class="sync-details">
           <div id="sync-status-detail">Checking…</div>
+          <div id="last-pull-detail" class="sync-meta"></div>
         </div>
-        <button class="btn-ghost" onclick="window.luminaSync?.manualSync()">🔄 Sync Now</button>
+        <div class="settings-btn-row">
+          <button class="btn-ghost" onclick="window.luminaSync?.manualSync()">↑ Push Changes</button>
+          <button id="pull-data-btn" class="btn-ghost">↓ Pull from Server</button>
+        </div>
+        <p class="settings-help">Push sends your local edits to Google. Pull fetches the latest data from Google — use this when opening on a new device.</p>
       </div>
 
       <div class="settings-section settings-section-danger">
@@ -329,8 +334,9 @@
 
       <div class="settings-section">
         <h4 class="settings-section-title">About</h4>
-        <p class="settings-help">Lumina v1.0.0 — Personal Productivity PWA<br>
-        Syncs with Google Sheets, Calendar, and Drive via Apps Script.</p>
+        <p class="settings-help">Lumina v2.0.0 — Personal Productivity PWA<br>
+        Syncs with Google Sheets, Calendar, and Drive via Apps Script.<br>
+        Open on any device — pull to get your data.</p>
       </div>
 
     </div>
