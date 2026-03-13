@@ -399,9 +399,9 @@ export async function renderGallery() {
         ? '<span class="gallery-sync-badge error">!</span>'
         : '<span class="gallery-sync-badge pending">↑</span>';
 
-    // Link to full Drive view on tap (only for synced photos)
-    const link = photo.syncStatus === 'synced' && photo.driveUrl
-      ? photo.driveUrl.replace('uc?export=view', 'file/d/').replace(/id=(.+)/, '$1/view')
+    // Link to full Drive view on tap — build from driveId directly
+    const link = photo.syncStatus === 'synced' && photo.driveId
+      ? `https://drive.google.com/file/d/${photo.driveId}/view`
       : null;
 
     item.innerHTML = link
